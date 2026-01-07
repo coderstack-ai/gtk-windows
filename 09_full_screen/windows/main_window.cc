@@ -31,16 +31,19 @@ void MainWindow::OnActivate(GtkApplication* app) {
   if (!window_) {
     window_ = GTK_WINDOW(gtk_application_window_new(app));
     gtk_window_set_title(window_, "GTK4 图片查看器");
-    gtk_window_set_default_size(window_, 800, 600);
-    gtk_window_set_resizable(window_, TRUE); /* 允许调整大小以便查看图片 */
-    gtk_window_set_decorated(window_, TRUE); /* 设置窗口有装饰 */
+
+    /* 固定窗口尺寸为 1920x1080 */
+    gtk_window_set_default_size(window_, 1920, 1080);
+
+    gtk_window_set_resizable(window_, FALSE); /* 不允许调整大小 */
+    gtk_window_set_decorated(window_, TRUE);  /* 设置窗口有装饰 */
 
     /* 主容器 Box */
-    box_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_margin_top(box_, 0);
-    gtk_widget_set_margin_bottom(box_, 0);
-    gtk_widget_set_margin_start(box_, 0);
-    gtk_widget_set_margin_end(box_, 0);
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_margin_top(box, 0);
+    gtk_widget_set_margin_bottom(box, 0);
+    gtk_widget_set_margin_start(box, 0);
+    gtk_widget_set_margin_end(box, 0);
 
     /* 创建图片显示组件 */
     picture_ = GTK_PICTURE(gtk_picture_new());
@@ -48,68 +51,93 @@ void MainWindow::OnActivate(GtkApplication* app) {
     gtk_picture_set_can_shrink(picture_, TRUE);
     gtk_widget_set_hexpand(GTK_WIDGET(picture_), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(picture_), TRUE);
-    gtk_box_append(GTK_BOX(box_), GTK_WIDGET(picture_));
+    gtk_box_append(GTK_BOX(box), GTK_WIDGET(picture_));
 
     SetUpMenu();
 
     /* 设置主窗口的子窗口 */
-    gtk_window_set_child(window_, GTK_WIDGET(box_));
+    gtk_window_set_child(window_, GTK_WIDGET(box));
     g_signal_connect(window_, "destroy", G_CALLBACK(MainWindow::OnWindowDestroy), this);
+
+    /* 连接 realize 信号，在窗口完全显示后居中 */
+    g_signal_connect(window_, "realize", G_CALLBACK(MainWindow::OnWindowRealize), this);
   }
 
   gtk_window_present(window_);
-
-  CenterWindowOnScreen();
 }
 
 void MainWindow::SetUpMenu() {
   /* 1. 创建 HeaderBar */
-  header_ = gtk_header_bar_new();
-  gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(header_), FALSE);
+  GtkWidget* header = gtk_header_bar_new();
+  gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(header), FALSE);
 
   /* 2. 创建菜单栏（View） */
-  menu_bar_ = gtk_popover_menu_bar_new_from_model(nullptr);
+  GtkWidget* menu_bar = gtk_popover_menu_bar_new_from_model(nullptr);
 
   /* 3. 菜单栏放进 HeaderBar（⚠️ 只放这里） */
-  gtk_header_bar_pack_start(GTK_HEADER_BAR(header_), menu_bar_);
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), menu_bar);
 
   /* 4. 设置为窗口标题栏 */
-  gtk_window_set_titlebar(window_, header_);
+  gtk_window_set_titlebar(window_, header);
 
   /* 5. 创建菜单 Model */
-  menubar_ = g_menu_new();
-  menubar_file_ = g_menu_new();
+  GMenu* menubar = g_menu_new();
+  GMenu* menubar_file = g_menu_new();
+  GMenu* menubar_settings = g_menu_new();
 
-  g_menu_append(menubar_file_, "Open", "app.open");
-  g_menu_append(menubar_file_, "Save", "app.save");
-  g_menu_append(menubar_file_, "Exit", "app.quit");
-  g_menu_append_submenu(menubar_, "File", G_MENU_MODEL(menubar_file_));
+  // action名称一般用"app."作为前缀（表示应用级 action，通常注册在 GtkApplication
+  // 上），之后可以用"."分隔以表达层级关系 例如 "app.file.open"
+  // 表示应用的“文件”菜单下的“打开”动作，"app.open" 只表示顶级“打开”动作，"open"
+  // 是最简单的名称常用于 widget 级别 推荐用 "app.file.open" 这种有层级意义的
+  g_menu_append(menubar_file, "打开荧光分析数据", "app.file.open");
+  g_menu_append(menubar_file, "保存荧光分析数据", "app.file.save");
+  g_menu_append(menubar_file, "保存当前灰度照片", "app.file.save_now_gray");
+  g_menu_append(menubar_file, "保存当前彩色照片", "app.file.save_now_color");
+  g_menu_append(menubar_file, "保存所有灰度照片", "app.file.save_all_gray");
+  g_menu_append(menubar_file, "保存所有彩色照片", "app.file.save_all_color");
+  g_menu_append(menubar_file, "退出", "app.file.quit");
+  g_menu_append_submenu(menubar, "文件", G_MENU_MODEL(menubar_file));
+
+  g_menu_append(menubar_settings, "灯光设置", "app.settings.light");
+  g_menu_append(menubar_settings, "相机设置", "app.settings.camera");
+  g_menu_append_submenu(menubar, "设置", G_MENU_MODEL(menubar_settings));
 
   /* 6. 绑定 Model 到菜单栏 */
-  gtk_popover_menu_bar_set_menu_model(GTK_POPOVER_MENU_BAR(menu_bar_), G_MENU_MODEL(menubar_));
+  gtk_popover_menu_bar_set_menu_model(GTK_POPOVER_MENU_BAR(menu_bar), G_MENU_MODEL(menubar));
 
   /* 7. 注册 action（必须在 app_ 上） */
   static const GActionEntry app_actions[] = {
-      {"open", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
-      {"save", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
-      {"quit", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.open", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.save", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.save_new_gray_image", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.save_new_color_image", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.save_all_gray_images", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.save_all_color_images", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
+      {"file.quit", MainWindow::OnMenuClicked, nullptr, nullptr, nullptr},
   };
 
   g_action_map_add_action_entries(G_ACTION_MAP(app_), app_actions, G_N_ELEMENTS(app_actions), this);
 
   /* 8. 释放你自己的引用 */
-  g_object_unref(menubar_file_);
-  g_object_unref(menubar_);
+  /* 注意：只释放 GMenu 对象，不要释放 GTK widget！
+   * menu_bar 和 header 是 widget，它们已经被添加到父容器中，
+   * 父容器会管理它们的生命周期，不需要手动释放 */
+  g_object_unref(menubar_file);
+  g_object_unref(menubar);
+  g_object_unref(menubar_settings);
+  /* menu_bar 和 header 是 widget，由 GTK 自动管理，不要调用 g_object_unref() */
 }
 
 void MainWindow::OnMenuClicked(GSimpleAction* action, GVariant* parameter, gpointer user_data) {
   auto* self = static_cast<MainWindow*>(user_data);
-  if (strcmp(g_action_get_name(G_ACTION(action)), "open") == 0) {
+  if (strcmp(g_action_get_name(G_ACTION(action)), "file.open") == 0) {
     self->OnMenuFileOpen();
-  } else if (strcmp(g_action_get_name(G_ACTION(action)), "save") == 0) {
+  } else if (strcmp(g_action_get_name(G_ACTION(action)), "file.save") == 0) {
     self->OnMenuFileSave();
-  } else if (strcmp(g_action_get_name(G_ACTION(action)), "quit") == 0) {
+  } else if (strcmp(g_action_get_name(G_ACTION(action)), "file.quit") == 0) {
     self->OnMenuFileExit();
+  } else {
+    std::cout << "OnMenuClicked: " << g_action_get_name(G_ACTION(action)) << std::endl;
   }
 }
 
@@ -250,6 +278,12 @@ void MainWindow::OnMenuFileExit() {
 void MainWindow::OnWindowDestroy(GtkWidget*, gpointer user_data) {
   auto* self = static_cast<MainWindow*>(user_data);
   self->window_ = nullptr;
+}
+
+void MainWindow::OnWindowRealize(GtkWidget*, gpointer user_data) {
+  auto* self = static_cast<MainWindow*>(user_data);
+  /* 窗口完全初始化后居中显示 */
+  self->CenterWindowOnScreen();
 }
 
 void MainWindow::CenterWindowOnScreen() {

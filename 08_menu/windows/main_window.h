@@ -22,10 +22,13 @@ class MainWindow {
 
   void SetUpMenu();
   static void OnMenuClicked(GSimpleAction* action, GVariant* parameter, gpointer user_data);
+
   void OnMenuFileOpen();
   static void OnFileOpenFinish(GObject* source, GAsyncResult* result, gpointer user_data);
+
   void OnMenuFileSave();
   static void OnFileSaveFinish(GObject* source, GAsyncResult* result, gpointer user_data);
+
   void OnMenuFileExit();
   void CenterWindowOnScreen();
   void LoadAndDisplayImage(GFile* file);  // 加载并显示图片
@@ -33,12 +36,6 @@ class MainWindow {
  private:
   GtkApplication* app_ = nullptr;
   GtkWindow* window_ = nullptr;
-  GtkWidget* box_ = nullptr;
-  GtkWidget* header_ = nullptr;
-  GtkWidget* menu_bar_ = nullptr;
-  GMenu* menubar_ = nullptr;
-  GMenu* menubar_file_ = nullptr;
 
-  GtkButton* button_ = nullptr;
   GtkPicture* picture_ = nullptr;  // 用于显示图片
 };
